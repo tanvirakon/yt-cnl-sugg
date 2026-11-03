@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>YT Channel Recommender</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #0f1115; color: #e6e6e6; }
+    header { padding: 1.2rem 1.5rem; border-bottom: 1px solid #262a33; display: flex;
+      align-items: center; justify-content: space-between; }
+    h1 { font-size: 1.2rem; margin: 0; }
+    .btn { background: #0b57d0; color: #fff; border: none; border-radius: 8px;
+      padding: 0.6rem 1rem; font-size: 0.95rem; cursor: pointer; }
+    .btn:disabled { opacity: 0.5; cursor: default; }
+    main { max-width: 980px; margin: 0 auto; padding: 1.5rem; }
+    .status { color: #9aa0ab; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 0.8rem; }
+    .card { background: #171a21; border: 1px solid #262a33; border-radius: 10px; padding: 0.8rem; }
+    .card .title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.2rem; }
+    .card a { color: #e6e6e6; text-decoration: none; }
+    .card a:hover { color: #8ab4f8; text-decoration: underline; }
+    .card code { font-size: 0.7rem; color: #7c8698; word-break: break-all; }
+    .section { margin-top: 2rem; }
+    .section h2 { font-size: 1.1rem; border-bottom: 1px solid #262a33; padding-bottom: 0.4rem; }
+    .cat { margin-bottom: 1.4rem; }
+    .cat h3 { font-size: 0.95rem; color: #8ab4f8; margin: 0 0 0.6rem; }
+    .sugg { white-space: pre-wrap; background: #171a21; border: 1px solid #262a33;
+      border-radius: 10px; padding: 1rem; line-height: 1.6; }
+    .empty { color: #9aa0ab; }
+    #err { color: #ff8f8f; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📺 YT Channel Recommender</h1>
+    <button id="signin" class="btn">Sign in with Google</button>
+  </header>
+  <main>
+    <div id="status" class="status">Not loaded yet.</div>
+    <div id="err"></div>
+
+    <section class="section" id="categorize" style="display:none">
+      <h2>Your subscriptions by category</h2>
+      <div id="cats"></div>
+      <button id="suggest" class="btn" style="margin-top:1rem">Suggest channels I might like</button>
+      <div id="suggestions" class="sugg" style="margin-top:1rem"></div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const status = $("status"), errEl = $("err");
+    const CATS = {
+      "English / Language learning": ["english", "accent", "speech", "language", "esl", "ielts", "fluent", "vocabulary", "pronunciation"],
+      "Finance / Money": ["finance", "money", "rich", "invest", "wealth", "business", "stock", "budget", "crypto", "salary", "earn"],
+      "Politics / News": ["politics", "political", "news", "democrat", "republican", "senate", "congress", "election", "opinion", "current affairs"],
+      "Self-improvement / Productivity": ["productivity", "study", "learning", "habits", "mindset", "success", "self", "discipline", "motivation", "books"],
+      "Entertainment": ["entertain", "fun", "reaction", "mrbeast", "jubilee", "challenge", "prank", "podcast"],
+      "Tech / Coding": ["tech", "code", "coding", "programming", "software", "developer", "ai", "computer", "engineering"],
+      "Travel / Lifestyle": ["travel", "lifestyle", "vlog", "adventure", "explore", "food", "fitness", "gym"],
+      "Gaming": ["gaming", "game", "gamer", "playthrough", "esports", "minecraft", "minecraft", "twitch"],
+      "Health / Wellness": ["health", "fitness", "workout", "mental", "meditation", "nutrition", "doctor", "therapy"],
+    };
+
+    function loadSubs() {
+      fetch("/api/subs").then(r => r.json()).then(({ loaded, subs }) => {
+        if (!loaded) return status.textContent = "No data yet — click 'Sign in with Google' to pull your subscriptions.";
+        status.textContent = `Loaded ${subs.length} subscriptions.`;
+        renderCategories(subs);
+      }).catch(e => showErr(e));
+    }
+
+    function catFor(ch) {
+      const hay = (ch.title + " " + ch.description).toLowerCase();
+      for (const [cat, keys] of Object.entries(CATS)) {
+        if (keys.some(k => hay.includes(k))) return cat;
+      }
+      return "Uncategorized";
+    }
+
+    function renderCategories(subs) {
+      $("categorize").style.display = "block";
+      const groups = {};
+      for (const s of subs) { const c = catFor(s); (groups[c] ||= []).push(s); }
+      const cats = $("cats");
+      cats.innerHTML = "";
+      for (const [cat, list] of Object.entries(groups)) {
+        const div = document.createElement("div");
+        div.className = "cat";
+        div.innerHTML = `<h3>${cat} (${list.length})</h3><div class="grid">` +
+          list.map(s => `<div class="card"><div class="title"><a target="_blank" rel="noopener"></a></div><code>${s.channelId}</code></div>`).join("") + "</div>";
+        div.querySelectorAll(".card .title a").forEach((el, i) => { el.textContent = list[i].title; el.href = "https://www.youtube.com/channel/" + list[i].channelId; });
+        cats.appendChild(div);
+      }
+    }
+
+    function showErr(e) { errEl.textContent = "Error: " + e.message; }
+
+    $("signin").onclick = () => { location.href = "/auth"; };
+
+    $("suggest").onclick = async () => {
+      const b = $("suggest"); const out = $("suggestions");
+      b.disabled = true; out.textContent = "Thinking…";
+      const { subs } = await fetch("/api/subs").then(r => r.json());
+      const byCat = {};
+      for (const s of subs) { const c = catFor(s); (byCat[c] ||= []).push(s); }
+      const summary = "I'm subscribed to these YouTube channels. Suggest 5 new channels I'd likely enjoy, grouped by category, with a one-line reason each. Keep it terse.\n\n" +
+        Object.entries(byCat).map(([c, l]) => `${c}: ${l.slice(0, 5).map(x => x.title).join(", ")} (${l.length} total)`).join("\n");
+      try {
+        const resp = await fetch("/api/suggest/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ summary }),
+        });
+        if (!resp.ok || !resp.body) { const j = await resp.json().catch(() => ({})); throw new Error(j.error || "request failed"); }
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let acc = "", buf = "";
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const frames = buf.split("\n\n");
+          buf = frames.pop() || "";
+          for (const frame of frames) {
+            const line = frame.split("\n").find(l => l.startsWith("data:"));
+            if (!line) continue;
+            let ev; try { ev = JSON.parse(line.slice(5).trim()); } catch { continue; }
+            if (ev.error) throw new Error(ev.error);
+            if (ev.text) { acc += ev.text; out.textContent = acc; }
+          }
+        }
+      } catch (e) { showErr(e); }
+      b.disabled = false;
+    };
+
+    loadSubs();
+    const params = new URLSearchParams(location.search);
+    if (params.get("loaded")) status.textContent = `Pulled ${params.get("count")} subscriptions from Google.`;
+  </script>
+</body>
+</html>

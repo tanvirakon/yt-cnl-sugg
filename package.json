@@ -1,0 +1,14 @@
+{
+  "name": "yt-channel-recommender",
+  "version": "0.1.0",
+  "description": "Local-first YouTube subscription analyzer: categorize subscriptions and get Gemini channel suggestions",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node server.mjs",
+    "categorize": "node scripts/categorize.mjs"
+  },
+  "dependencies": {
+    "express": "^5.3.0"
+  }
+}
